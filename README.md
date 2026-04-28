@@ -1,3 +1,5 @@
+![Into the land of pixels](https://github.com/thatoldfarm/vf/blob/main/ai-kernels/dragon-kernels/MASTER_DNA_SEED_OS.png)
+
 [A text version of the original virtual-forest
 ](https://raw.githubusercontent.com/thatoldfarm/vf/refs/heads/main/vf.txt)
 [MAIN ENTRY POINT](https://raw.githubusercontent.com/thatoldfarm/vf/refs/heads/main/vf.txt)
