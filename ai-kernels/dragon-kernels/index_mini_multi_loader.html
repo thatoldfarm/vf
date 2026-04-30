@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>IRONVAULT // BARE METAL</title>
+    <!-- Auto-refresh logic (1115 seconds) -->
+    <meta http-equiv="refresh" content="1115">
+    <style>
+        body { background: #000; color: #fff; font-family: monospace; margin: 0; padding: 10px; }
+        input, textarea, button, select { background: #000; color: #fff; border: 1px solid #fff; font-family: monospace; font-size: 12px; padding: 2px 5px; margin: 2px; }
+        button:hover { background: #fff; color: #000; cursor: pointer; }
+        hr { border: 0; border-top: 1px solid #fff; margin: 10px 0; }
+        
+        /* 2x2 Grid */
+        #grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 420px 420px; gap: 10px; width: 100%; }
+        .slot { border: 1px solid #fff; display: flex; flex-direction: column; }
+        .slot-head { border-bottom: 1px solid #fff; padding: 2px 5px; font-size: 11px; display: flex; justify-content: space-between; }
+        iframe { border: 0; width: 100%; height: 100%; background: #000; }
+
+        /* Scratchpads */
+        .pads { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
+        .pads div { display: flex; flex-direction: column; }
+        textarea { height: 120px; }
+    </style>
+</head>
+<body>
+
+<strong>IRONVAULT UNIFIED PLATFORM // BARE METAL MODE</strong><br>
+LOCALS: <a href="http://127.0.0.1:8080" style="color:#fff">8080-B</a> | <a href="http://127.0.0.1:8081" style="color:#fff">8081-B</a> | <a href="http://127.0.0.1:8080/index.html" style="color:#fff">8080-I</a> | <a href="http://127.0.0.1:8081/index1.html" style="color:#fff">8081-I1</a>
+<hr>
+
+<div>
+    COMMAND: <input type="text" id="url-in" value="http://127.0.0.1:8080" style="width:300px">
+    <button onclick="loadWeb('url-in')">LOAD WEB</button>
+    <button onclick="location.reload()">RELOAD ALL</button>
+</div>
+
+<div style="margin: 5px 0;">
+    IGNITE: 
+    <button onclick="ignite('sectorforth.img.png')">FORTH</button>
+    <button onclick="ignite('openbsd-floppy.img.png')">OPENBSD</button>
+    <button onclick="ignite('freedos_boot_disk_160K.img.png')">FREEDOS</button>
+    <button onclick="ignite('linuxV3.iso.png')">LINUX-V3</button>
+    <button onclick="ignite('d1440.img.png')">NEW DISK</button>
+</div>
+
+<div id="grid">
+    <div class="slot" id="s0"><div class="slot-head"><span>[1] EMPTY</span><button onclick="clearSlot(0)">X</button></div><iframe id="f0"></iframe></div>
+    <div class="slot" id="s1"><div class="slot-head"><span>[2] EMPTY</span><button onclick="clearSlot(1)">X</button></div><iframe id="f1"></iframe></div>
+    <div class="slot" id="s2"><div class="slot-head"><span>[3] EMPTY</span><button onclick="clearSlot(2)">X</button></div><iframe id="f2"></iframe></div>
+    <div class="slot" id="s3"><div class="slot-head"><span>[4] EMPTY</span><button onclick="clearSlot(3)">X</button></div><iframe id="f3"></iframe></div>
+</div>
+
+<div class="pads">
+    <div>(+) PROMPT<textarea id="p1"></textarea><button onclick="copy('p1')">COPY</button></div>
+    <div>(-) PROMPT<textarea id="p2"></textarea><button onclick="copy('p2')">COPY</button></div>
+    <div>SCRATCHPAD<textarea id="p3"></textarea><button onclick="copy('p3')">COPY</button></div>
+</div>
+
+<hr>
+VAULT: <span id="v-info">0.00/5.00MB</span> | <span id="v-list">NONE</span> | <button onclick="localStorage.clear();location.reload();" style="font-size:10px">PURGE VAULT</button>
+
+<script type="module">
+    window.vaultDNA = {};
+
+    function updateVaultUI() {
+        let size = 0, keys = [];
+        for(let i=0; i<localStorage.length; i++){
+            let k = localStorage.key(i);
+            if(k.startsWith("D_")) {
+                size += localStorage.getItem(k).length;
+                keys.push(k.replace("D_",""));
+            }
+        }
+        document.getElementById('v-info').innerText = `${((size*0.75)/1024/1024).toFixed(2)}/5.00MB`;
+        document.getElementById('v-list').innerText = keys.length ? keys.join(", ") : "NONE";
+    }
+
+    async function extractDNA(src) {
+        let k = "D_" + src.replace("MASTER_DNA_SEED_","").replace(".png","");
+        let cached = localStorage.getItem(k);
+        if(cached) return { data: Uint8Array.from(atob(cached), c => c.charCodeAt(0)), filename: k.replace("D_","") };
+
+        const res = await fetch(src);
+        const blob = await res.blob();
+        const img = await createImageBitmap(blob, { colorSpaceConversion: 'none' });
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width; canvas.height = img.height;
+        const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0);
+        const imgData = ctx.getImageData(0, 0, img.width, img.height).data;
+        let rgb = new Uint8Array((imgData.length / 4) * 3);
+        for (let i=0, j=0; i<imgData.length; i+=4) { rgb[j++] = imgData[i]; rgb[j++] = imgData[i+1]; rgb[j++] = imgData[i+2]; }
+        let end = rgb.length-1; while(end>=0 && rgb[end]===0) end--;
+        const b64 = new TextDecoder().decode(rgb.slice(0, new DataView(rgb.buffer, end-3, 4).getUint32(0))).replace(/-/g,'+').replace(/_/g,'/');
+        const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+        const ds = new DecompressionStream('gzip');
+        const writer = ds.writable.getWriter();
+        writer.write(bin.slice(4 + new DataView(bin.buffer, 0, 4).getUint32(0))); writer.close();
+        const output = []; const reader = ds.readable.getReader();
+        while(true) { const {value, done} = await reader.read(); if(done) break; output.push(value); }
+        const final = new Uint8Array(output.reduce((a, c) => a + c.length, 0));
+        let off = 0; for(const c of output) { final.set(c, off); off += c.length; }
+
+        if(confirm("STORE DNA IN VAULT: " + src + "?")) {
+            try { localStorage.setItem(k, btoa(String.fromCharCode.apply(null, final))); updateVaultUI(); } catch(e){alert("Vault Full.");}
+        }
+        return { data: final, filename: JSON.parse(new TextDecoder().decode(bin.slice(4, 4+new DataView(bin.buffer,0,4).getUint32(0)))).filename };
+    }
+
+    window.ignite = async function(png) {
+        let idx = -1; for(let i=0; i<4; i++) { if(!document.getElementById(`f${i}`).dataset.active) { idx=i; break; } }
+        if(idx===-1) return;
+        const frame = document.getElementById(`f${idx}`);
+        const label = document.querySelector(`#s${idx} .slot-head span`);
+        label.innerText = "SYNTH...";
+
+        try {
+            if(!vaultDNA.js) vaultDNA.js = await extractDNA("MASTER_DNA_SEED_libv86.js.png");
+            if(!vaultDNA.wasm) vaultDNA.wasm = await extractDNA("MASTER_DNA_SEED_v86.wasm.png");
+            if(!vaultDNA.bios) vaultDNA.bios = await extractDNA("MASTER_DNA_SEED_seabios.bin.png");
+            if(!vaultDNA.vga) vaultDNA.vga = await extractDNA("MASTER_DNA_SEED_vgabios.bin.png");
+            const os = await extractDNA(`MASTER_DNA_SEED_${png}`);
+
+            frame.dataset.active = "true";
+            const win = frame.contentWindow; const doc = win.document;
+            doc.open(); doc.write(`<html><body style="margin:0;background:#000;color:#fff;font-family:monospace;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;"><div id="l">BOOT...</div><div id="s" style="display:none;"><canvas></canvas></div></body></html>`); doc.close();
+
+            win.rawJS = vaultDNA.js.data; win.rawW = vaultDNA.wasm.data; win.rawB = vaultDNA.bios.data; win.rawV = vaultDNA.vga.data; win.rawO = os.data; win.osN = os.filename;
+            win.rawFDB = localStorage.getItem("D_d1440.img") ? Uint8Array.from(atob(localStorage.getItem("D_d1440.img")), c => c.charCodeAt(0)) : null;
+
+            const ldr = doc.createElement('script');
+            ldr.textContent = `(async function(){
+                const cJS=new Uint8Array(window.rawJS), cW=new Uint8Array(window.rawW), cB=new Uint8Array(window.rawB), cV=new Uint8Array(window.rawV), cO=new Uint8Array(window.rawO);
+                const jsU=URL.createObjectURL(new Blob([cJS],{type:'text/javascript'})), wasmU=URL.createObjectURL(new Blob([cW],{type:'application/wasm'}));
+                const scr=document.createElement('script'); scr.src=jsU;
+                scr.onload=()=>{
+                    let V86=window.V86Starter||(window.v86&&window.v86.V86Starter);
+                    if(!V86){for(let k in window){if(k.toLowerCase().includes("v86")&&typeof window[k]==="function"){V86=window[k];break;}}}
+                    const cfg={wasm_path:wasmU,memory_size:64*1024*1024,vga_canvas:document.querySelector("canvas"),screen_container:document.getElementById("s"),bios:{buffer:cB.buffer},vga_bios:{buffer:cV.buffer},autostart:true,tablet_id:1};
+                    if(window.osN.endsWith(".iso")) cfg.cdrom={buffer:cO.buffer}; else cfg.fda={buffer:cO.buffer};
+                    if(window.rawFDB) cfg.fdb={buffer:new Uint8Array(window.rawFDB).buffer};
+                    document.getElementById("l").style.display="none"; document.getElementById("s").style.display="block"; new V86(cfg);
+                }; document.head.appendChild(scr);
+            })();`;
+            doc.head.appendChild(ldr);
+            label.innerText = `OS: ${os.filename.toUpperCase()}`;
+        } catch(e) { label.innerText = "ERR: "+e.message; }
+    };
+
+    window.loadWeb = (id) => {
+        let url = document.getElementById(id).value;
+        for(let i=0; i<4; i++){
+            let f = document.getElementById(`f${i}`);
+            if(!f.dataset.active){ f.src=url; f.dataset.active="true"; document.querySelector(`#s${i} .slot-head span`).innerText = "WEB: "+url.substring(0,15); return; }
+        }
+    };
+
+    window.clearSlot = (i) => {
+        let f = document.getElementById(`f${i}`); f.src="about:blank"; f.dataset.active="";
+        document.querySelector(`#s${i} .slot-head span`).innerText = `[${i+1}] EMPTY`;
+    };
+
+    window.copy = (id) => navigator.clipboard.writeText(document.getElementById(id).value);
+
+    updateVaultUI();
+</script>
+</body>
+</html>
